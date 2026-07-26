@@ -49,7 +49,7 @@ di comando.
 
 ```
 kde-wallpaper-import [OPZIONI] <FILE>...
-  --apply                 imposta come sfondo l'ultimo pacchetto importato
+  --apply                 imposta come sfondo l'ultimo pacchetto elaborato
   --fill-mode <MODE>      passato a plasma-apply-wallpaperimage
   --dest <DIR>            root di destinazione
                           (default: ${XDG_DATA_HOME:-$HOME/.local/share}/wallpapers)
@@ -148,7 +148,13 @@ Per ogni file della selezione:
 
 A fine ciclo: una sola notifica riassuntiva (`3 importati, 1 duplicato,
 1 errore`); con `--apply`, `plasma-apply-wallpaperimage` sull'ultimo pacchetto
-importato con successo.
+**elaborato con successo** — importato oppure riconosciuto come duplicato.
+
+Il duplicato conta perché la voce di menù «Importa e imposta come sfondo» deve
+fare ciò che promette anche su un'immagine già in libreria: il pacchetto esiste
+già su disco e `catalog::duplicate_of` ne restituisce il nome, quindi non c'è
+ragione di non applicarlo. Limitare `--apply` ai soli import nuovi renderebbe
+quella voce un no-op silenzioso nel caso più frequente dopo il primo utilizzo.
 
 ### Struttura prodotta
 
@@ -333,3 +339,13 @@ modificata.
 - ridimensionamento dell'immagine originale
 - watch di cartelle
 - integrazione con Gwenview o con altri file manager
+
+## Modifiche dopo l'approvazione
+
+**2026-07-26 — `--apply` applica anche i duplicati.** La review della Task 6 ha
+mostrato che limitare `--apply` ai soli import nuovi rende la voce di menù
+«Importa e imposta come sfondo» un no-op silenzioso su qualunque immagine già
+in libreria: nessun errore, nessun dialogo, exit 0, sfondo invariato. Poiché il
+pacchetto esiste già su disco e `catalog::duplicate_of` ne restituisce il nome,
+`Outcome::Duplicate` porta ora anche il path del pacchetto esistente e alimenta
+l'ultimo elaborato. Deciso dall'utente; sezioni 1 e 4 aggiornate di conseguenza.
