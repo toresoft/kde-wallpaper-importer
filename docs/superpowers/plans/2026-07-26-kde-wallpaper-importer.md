@@ -330,7 +330,7 @@ pub fn resolve_collision(base: &str, taken: &HashSet<String>) -> Option<String> 
 - [ ] **Step 6: Verificare che i test passino**
 
 Run: `cargo test naming`
-Expected: PASS, 7 test.
+Expected: PASS, 8 test.
 
 - [ ] **Step 7: Aggiungere la CI**
 
@@ -417,7 +417,7 @@ mod tests {
     fn usa_il_formato_rilevato_non_lestensione() {
         let dir = tempdir().unwrap();
         // Un PNG con estensione .jpg: deve vincere il contenuto.
-        let path = dir.join("bugiardo.jpg");
+        let path = dir.path().join("bugiardo.jpg");
         RgbImage::new(10, 20)
             .save_with_format(&path, ImageFormat::Png)
             .unwrap();
@@ -436,7 +436,7 @@ mod tests {
     #[test]
     fn contenuto_ignoto_e_unsupported_format() {
         let dir = tempdir().unwrap();
-        let path = dir.join("random.bin");
+        let path = dir.path().join("random.bin");
         std::fs::write(&path, b"non sono un'immagine, davvero").unwrap();
         let err = probe(&path).unwrap_err();
         assert!(matches!(err, ProbeError::UnsupportedFormat(_)), "{err:?}");
@@ -446,7 +446,7 @@ mod tests {
     fn formato_riconosciuto_ma_non_compilato_e_unsupported_format() {
         // Il GIF è riconosciuto dai magic bytes ma la feature non è attiva.
         let dir = tempdir().unwrap();
-        let path = dir.join("anim.gif");
+        let path = dir.path().join("anim.gif");
         std::fs::write(&path, b"GIF89a\x01\x00\x01\x00\x00\x00\x00").unwrap();
         let err = probe(&path).unwrap_err();
         assert!(matches!(err, ProbeError::UnsupportedFormat(_)), "{err:?}");
@@ -457,7 +457,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let intero = scrivi_immagine(dir.path(), "intero.png", 64, 64);
         let bytes = std::fs::read(&intero).unwrap();
-        let path = dir.join("troncato.png");
+        let path = dir.path().join("troncato.png");
         std::fs::write(&path, &bytes[..12]).unwrap();
         let err = probe(&path).unwrap_err();
         assert!(matches!(err, ProbeError::Corrupt(_)), "{err:?}");
