@@ -25,10 +25,20 @@ const TITOLO: &str = "Importa come sfondo";
 
 #[derive(Debug)]
 pub enum Outcome {
-    Imported { name: String, path: PathBuf },
-    Duplicate { of: String },
+    Imported {
+        name: String,
+        path: PathBuf,
+    },
+    /// `path` e' il pacchetto gia' presente: serve a `--apply`, che deve poter
+    /// impostare come sfondo anche un'immagine gia' in libreria.
+    Duplicate {
+        of: String,
+        path: PathBuf,
+    },
     Cancelled,
-    Failed { message: String },
+    Failed {
+        message: String,
+    },
 }
 
 /// Punto di ingresso reale: monta le implementazioni concrete e delega a [`run`].
@@ -59,16 +69,21 @@ pub fn run(cli: &Cli, ui: &dyn Ui, setter: &dyn WallpaperSetter) -> i32 {
     let mut cat = Catalog::scan(&dest, &roots);
 
     let mut outcomes = Vec::with_capacity(cli.files.len());
-    let mut ultimo_importato: Option<PathBuf> = None;
+    // Ultimo pacchetto *elaborato*, non solo importato: un duplicato e' un
+    // pacchetto valido gia' su disco, e `--apply` deve poterlo impostare.
+    let mut ultimo_elaborato: Option<PathBuf> = None;
 
     for file in &cli.files {
         let esito = importa_uno(file, &dest, &mut cat, cli, ui);
         match &esito {
             Outcome::Imported { name, path } => {
                 println!("importato: {name}");
-                ultimo_importato = Some(path.clone());
+                ultimo_elaborato = Some(path.clone());
             }
-            Outcome::Duplicate { of } => println!("duplicato di: {of}"),
+            Outcome::Duplicate { of, path } => {
+                println!("duplicato di: {of}");
+                ultimo_elaborato = Some(path.clone());
+            }
             Outcome::Cancelled => println!("annullato: {}", file.display()),
             Outcome::Failed { message } => eprintln!("errore: {message}"),
         }
@@ -94,7 +109,7 @@ pub fn run(cli: &Cli, ui: &dyn Ui, setter: &dyn WallpaperSetter) -> i32 {
     ui.notify("Importa come sfondo", &riepilogo, falliti > 0);
 
     if cli.apply {
-        if let Some(path) = &ultimo_importato {
+        if let Some(path) = &ultimo_elaborato {
             if let Err(e) = setter.apply(path, cli.fill_mode.as_deref()) {
                 eprintln!("errore: impossibile impostare lo sfondo: {e}");
                 ui.notify(
@@ -143,8 +158,10 @@ fn importa_uno(file: &Path, dest: &Path, cat: &mut Catalog, cli: &Cli, ui: &dyn 
     };
 
     if let Some(esistente) = cat.duplicate_of(&sha) {
+        let of = esistente.to_string();
         return Outcome::Duplicate {
-            of: esistente.to_string(),
+            path: dest.join(&of),
+            of,
         };
     }
 
@@ -311,6 +328,34 @@ mod tests {
     }
 
     #[test]
+    fn apply_imposta_anche_un_pacchetto_duplicato() {
+        // La voce di menu' «Importa e imposta come sfondo» deve funzionare
+        // anche su un'immagine gia' in libreria: il pacchetto esiste, quindi
+        // non c'e' ragione di non applicarlo.
+        let tmp = tempdir().unwrap();
+        let dest = tmp.path().join("wallpapers");
+        let a = immagine(tmp.path(), "a.png", 1600, 900, [1, 0, 0]);
+
+        let ui = FakeUi::new(true);
+        let primo = FakeSetter::new();
+        assert_eq!(run(&cli(&dest, vec![a.clone()]), &ui, &primo), EXIT_OK);
+        assert!(
+            primo.calls().is_empty(),
+            "senza --apply non si applica nulla"
+        );
+
+        let mut c = cli(&dest, vec![a]);
+        c.apply = true;
+        let secondo = FakeSetter::new();
+        assert_eq!(run(&c, &ui, &secondo), EXIT_OK);
+        assert_eq!(
+            secondo.calls(),
+            vec![(dest.join("a"), None)],
+            "il duplicato va comunque impostato come sfondo"
+        );
+    }
+
+    #[test]
     fn summary_line_omette_le_categorie_vuote() {
         let solo_import = [Outcome::Imported {
             name: "a".into(),
@@ -323,7 +368,10 @@ mod tests {
                 name: "a".into(),
                 path: PathBuf::from("/x/a"),
             },
-            Outcome::Duplicate { of: "b".into() },
+            Outcome::Duplicate {
+                of: "b".into(),
+                path: PathBuf::from("/x/b"),
+            },
             Outcome::Cancelled,
             Outcome::Failed {
                 message: "boom".into(),
