@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Service
+MimeType=image/jpeg;image/png;image/webp;image/tiff;image/bmp;
+Actions=ImportWallpaper;ImportAndApplyWallpaper;
+X-KDE-Priority=TopLevel
+
+[Desktop Action ImportWallpaper]
+Icon=preferences-desktop-wallpaper
+Name=Import as wallpaper
+Name[it]=Importa come sfondo
+Exec=@BINARY@ %F
+
+[Desktop Action ImportAndApplyWallpaper]
+Icon=preferences-desktop-wallpaper
+Name=Import and set as wallpaper
+Name[it]=Importa e imposta come sfondo
+Exec=@BINARY@ --apply %F
