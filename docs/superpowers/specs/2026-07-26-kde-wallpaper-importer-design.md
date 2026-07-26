@@ -13,8 +13,20 @@ già installati (utente e sistema).
 ## Ambiente di riferimento
 
 Fedora 44, Plasma 6.7.3, KF6. Formato servicemenu verificato sui file di
-sistema: `Type=Service` + `MimeType=` + `Actions=`, file non eseguibile (0644),
-in `<datadir>/kio/servicemenus/`.
+sistema: `Type=Service` + `MimeType=` + `Actions=`, in
+`<datadir>/kio/servicemenus/`.
+
+Il file va installato **eseguibile (0755)**. I servicemenu di sistema sono 0644
+ma appartengono a root; per quelli non di root KDE pretende il bit di
+esecuzione e altrimenti rifiuta il file:
+
+```
+Access to ".../kde-wallpaper-importer.desktop" denied,
+not owned by root and executable flag not set.
+```
+
+Con 0644 la voce semplicemente non compare nel menù, senza alcun messaggio
+visibile all'utente.
 
 Prerequisito di build: `sudo dnf install rust cargo`. `gcc`, `ld` e
 `pkg-config` sono già presenti.
@@ -349,3 +361,12 @@ in libreria: nessun errore, nessun dialogo, exit 0, sfondo invariato. Poiché il
 pacchetto esiste già su disco e `catalog::duplicate_of` ne restituisce il nome,
 `Outcome::Duplicate` porta ora anche il path del pacchetto esistente e alimenta
 l'ultimo elaborato. Deciso dall'utente; sezioni 1 e 4 aggiornate di conseguenza.
+
+**2026-07-26 — il servicemenu va installato eseguibile (0755).** La verifica
+manuale sulla macchina reale ha mostrato che con 0644 la voce non compare in
+Dolphin: KDE rifiuta i file `.desktop` non di proprietà di root che non hanno il
+bit di esecuzione, registrando `not owned by root and executable flag not set` e
+senza mostrare nulla all'utente. Il vincolo 0644 era stato derivato dai file in
+`/usr/share/kio/servicemenus/`, che sono 0644 ma appartengono a root: la
+condizione vera è «root oppure eseguibile», non «0644». Sezione «Ambiente di
+riferimento» corretta.

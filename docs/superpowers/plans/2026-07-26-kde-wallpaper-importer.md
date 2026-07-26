@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Target: Fedora 44, Plasma 6.7.3, KF6. Servicemenu in `<PREFIX>/share/kio/servicemenus/`, `Type=Service`, permessi 0644.
+- Target: Fedora 44, Plasma 6.7.3, KF6. Servicemenu in `<PREFIX>/share/kio/servicemenus/`, `Type=Service`, permessi **0755**: per i file non di proprietà di root KDE pretende il bit di esecuzione, altrimenti li rifiuta («not owned by root and executable flag not set») e la voce non compare.
 - Dipendenze runtime esterne: solo `kdialog`, `notify-send`, `plasma-apply-wallpaperimage`, tutte opzionali e invocate come processi. Nessuna dipendenza C oltre `libc`.
 - Crate consentiti: `image`, `sha2`, `serde_json`, `anyhow`, `clap`, `libc`; dev: `tempfile`, `assert_cmd`, `predicates`. Non aggiungerne altri senza aggiornare la spec.
 - `image` va usato con `default-features = false` e le sole feature `jpeg`, `png`, `webp`, `tiff`, `bmp`.
@@ -2642,7 +2642,7 @@ install: build
 	install -Dm755 target/release/$(BIN) "$(BINDIR)/$(BIN)"
 	install -d "$(MENUDIR)"
 	sed 's|@BINARY@|$(BINDIR)/$(BIN)|g' share/kio/servicemenus/$(MENU).in > "$(MENUDIR)/$(MENU)"
-	chmod 644 "$(MENUDIR)/$(MENU)"
+	chmod 755 "$(MENUDIR)/$(MENU)"
 	-kbuildsycoca6 --noincremental >/dev/null 2>&1
 
 uninstall:
@@ -2671,7 +2671,7 @@ test ! -e "$PREFIX_TEST/bin/kde-wallpaper-import" || echo "FALLITO: uninstall in
 rm -rf "$PREFIX_TEST"
 ```
 
-Expected: nessuna riga «FALLITO», `stat` stampa `644`.
+Expected: nessuna riga «FALLITO», `stat` stampa `755`.
 
 - [ ] **Step 4: Scrivere il README**
 
