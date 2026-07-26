@@ -1355,7 +1355,7 @@ Entrambi i moduli sono sottili wrapper su processi esterni, e nessuno dei due de
 **Files:**
 - Create: `src/ui.rs`, `src/apply.rs`
 - Modify: `src/lib.rs` (aggiungere `pub mod ui;` e `pub mod apply;`)
-- Test: unit test in fondo a `src/ui.rs`
+- Test: unit test in fondo a `src/ui.rs` e a `src/apply.rs`
 
 **Interfaces:**
 - Consumes: niente
@@ -1364,6 +1364,7 @@ Entrambi i moduli sono sottili wrapper su processi esterni, e nessuno dei due de
   - `ui::KdeUi`, `ui::SilentUi` (unit struct)
   - `ui::testing::FakeUi` con `FakeUi::new(risposta_confirm: bool)`, `fn confirms(&self) -> Vec<String>`, `fn notifications(&self) -> Vec<(String, String, bool)>`
   - `apply::WallpaperSetter` trait: `fn apply(&self, package: &Path, fill_mode: Option<&str>) -> anyhow::Result<()>`
+  - `apply::plasma_args(package: &Path, fill_mode: Option<&str>) -> Vec<OsString>`
   - `apply::PlasmaSetter` (unit struct)
   - `apply::testing::FakeSetter` con `FakeSetter::new()`, `fn calls(&self) -> Vec<(PathBuf, Option<String>)>`, `FakeSetter::failing()`
 
@@ -1514,11 +1515,52 @@ pub mod testing {
 }
 ```
 
-- [ ] **Step 4: Implementare `apply`**
+- [ ] **Step 4: Scrivere i test di `apply` (falliranno)**
 
 `src/apply.rs`:
 
 ```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plasma_args_senza_fill_mode_passa_solo_il_pacchetto() {
+        assert_eq!(
+            plasma_args(Path::new("/w/Foresta"), None),
+            vec![OsString::from("/w/Foresta")]
+        );
+    }
+
+    #[test]
+    fn plasma_args_antepone_il_fill_mode() {
+        assert_eq!(
+            plasma_args(Path::new("/w/Foresta"), Some("stretch")),
+            vec![
+                OsString::from("--fill-mode"),
+                OsString::from("stretch"),
+                OsString::from("/w/Foresta"),
+            ]
+        );
+    }
+
+    #[test]
+    fn plasma_args_tiene_insieme_i_path_con_spazi() {
+        // Un solo argomento, non due: nessuno shell quoting di mezzo.
+        assert_eq!(
+            plasma_args(Path::new("/w/Cala Luna"), None),
+            vec![OsString::from("/w/Cala Luna")]
+        );
+    }
+}
+```
+
+- [ ] **Step 5: Implementare `apply`**
+
+In testa a `src/apply.rs`:
+
+```rust
+use std::ffi::OsString;
 use std::path::Path;
 use std::process::Command;
 
@@ -1530,18 +1572,28 @@ pub trait WallpaperSetter {
     fn apply(&self, package: &Path, fill_mode: Option<&str>) -> anyhow::Result<()>;
 }
 
+/// Argomenti per `plasma-apply-wallpaperimage`.
+///
+/// Estratta come funzione pura perché è l'unica parte di [`PlasmaSetter`]
+/// verificabile senza cambiare davvero lo sfondo della macchina di test.
+pub fn plasma_args(package: &Path, fill_mode: Option<&str>) -> Vec<OsString> {
+    let mut args = Vec::with_capacity(3);
+    if let Some(m) = fill_mode {
+        args.push(OsString::from("--fill-mode"));
+        args.push(OsString::from(m));
+    }
+    args.push(package.as_os_str().to_os_string());
+    args
+}
+
 /// Implementazione reale su `plasma-apply-wallpaperimage`, che accetta sia un
 /// file immagine sia una directory di pacchetto.
 pub struct PlasmaSetter;
 
 impl WallpaperSetter for PlasmaSetter {
     fn apply(&self, package: &Path, fill_mode: Option<&str>) -> anyhow::Result<()> {
-        let mut cmd = Command::new("plasma-apply-wallpaperimage");
-        if let Some(m) = fill_mode {
-            cmd.arg("--fill-mode").arg(m);
-        }
-        let status = cmd
-            .arg(package)
+        let status = Command::new("plasma-apply-wallpaperimage")
+            .args(plasma_args(package, fill_mode))
             .status()
             .context("plasma-apply-wallpaperimage non disponibile")?;
         if !status.success() {
@@ -1598,19 +1650,20 @@ pub mod testing {
 
 Aggiungere `pub mod apply;` e `pub mod ui;` a `src/lib.rs`.
 
-- [ ] **Step 5: Verificare che i test passino**
+- [ ] **Step 6: Verificare che i test passino**
 
-Run: `cargo test ui`
-Expected: PASS, 2 test.
+Run: `cargo test ui:: && cargo test apply::`
+Expected: PASS, 2 test per `ui` e 3 per `apply`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add src/ui.rs src/apply.rs src/lib.rs
 git commit -m "feat(ui,apply): kdialog, notify-send e plasma dietro trait
 
 Le implementazioni finte permettono di testare l'orchestrazione senza
-aprire finestre né toccare lo sfondo della macchina di test."
+aprire finestre né toccare lo sfondo della macchina di test. La
+costruzione degli argomenti di plasma è una funzione pura testabile."
 ```
 
 ---
@@ -2144,9 +2197,9 @@ Expected: PASS, 5 test.
 
 ```rust
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
-use assert_cmd::cargo::CommandCargoExt;
+use assert_cmd::assert::Assert;
+use assert_cmd::Command;
 use image::RgbImage;
 
 /// Scrive un PNG di tinta unita. Tinte diverse producono hash diversi.
@@ -2172,7 +2225,10 @@ pub fn pacchetto_finto(root: &Path, nome: &str) {
 }
 
 /// Invoca il binario reale con `--no-ui`, isolando le root XDG sulla tmpdir.
-pub fn importa(dest: &Path, xdg_data_dirs: &Path, args: &[&str]) -> std::process::Output {
+///
+/// Restituisce un [`Assert`] su cui incatenare `.code(..)`, `.stdout(..)`,
+/// `.stderr(..)` con i predicati di `predicates`.
+pub fn importa(dest: &Path, xdg_data_dirs: &Path, args: &[&str]) -> Assert {
     let mut cmd = Command::cargo_bin("kde-wallpaper-import").expect("binario compilato");
     cmd.env("XDG_DATA_HOME", dest.parent().unwrap())
         .env("XDG_DATA_DIRS", xdg_data_dirs)
@@ -2183,7 +2239,7 @@ pub fn importa(dest: &Path, xdg_data_dirs: &Path, args: &[&str]) -> std::process
     for a in args {
         cmd.arg(a);
     }
-    cmd.output().expect("esecuzione del binario")
+    cmd.assert()
 }
 
 /// Nessuna directory temporanea deve sopravvivere a un'esecuzione.
@@ -2208,6 +2264,7 @@ pub fn assert_niente_tmp(dest: &Path) {
 mod common;
 
 use common::{assert_niente_tmp, immagine, importa, pacchetto_finto};
+use predicates::prelude::*;
 use tempfile::tempdir;
 
 #[test]
@@ -2218,8 +2275,11 @@ fn import_base_produce_un_kpackage_valido() {
     std::fs::create_dir_all(&sistema).unwrap();
     let src = immagine(tmp.path(), "Tramonto Cala Luna.png", 1600, 900, [10, 20, 30]);
 
-    let out = importa(&dest, &sistema, &[src.to_str().unwrap()]);
-    assert_eq!(out.status.code(), Some(0), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    importa(&dest, &sistema, &[src.to_str().unwrap()])
+        .code(0)
+        .stdout(predicate::str::contains("importato: Tramonto_Cala_Luna"))
+        .stdout(predicate::str::contains("1 importati"))
+        .stderr(predicate::str::is_empty());
 
     let pkg = dest.join("Tramonto_Cala_Luna");
     assert!(pkg.join("metadata.json").is_file());
@@ -2235,7 +2295,6 @@ fn import_base_produce_un_kpackage_valido() {
     assert_eq!(meta["KPlugin"]["Id"], "Tramonto_Cala_Luna");
     assert_eq!(meta["KPlugin"]["Name"], "Tramonto Cala Luna");
 
-    assert!(String::from_utf8_lossy(&out.stdout).contains("1 importati"));
     assert_niente_tmp(&dest);
 }
 
@@ -2247,13 +2306,12 @@ fn stesso_file_due_volte_non_duplica() {
     std::fs::create_dir_all(&sistema).unwrap();
     let src = immagine(tmp.path(), "foresta.png", 1600, 900, [1, 2, 3]);
 
-    let primo = importa(&dest, &sistema, &[src.to_str().unwrap()]);
-    assert_eq!(primo.status.code(), Some(0));
+    importa(&dest, &sistema, &[src.to_str().unwrap()]).success();
 
-    let secondo = importa(&dest, &sistema, &[src.to_str().unwrap()]);
-    assert_eq!(secondo.status.code(), Some(0));
-    let stdout = String::from_utf8_lossy(&secondo.stdout);
-    assert!(stdout.contains("duplicato di: foresta"), "stdout: {stdout}");
+    importa(&dest, &sistema, &[src.to_str().unwrap()])
+        .code(0)
+        .stdout(predicate::str::contains("duplicato di: foresta"))
+        .stdout(predicate::str::contains("0 importati, 1 duplicati"));
 
     assert!(!dest.join("foresta-2").exists());
     assert_niente_tmp(&dest);
@@ -2271,9 +2329,10 @@ fn file_diverso_con_lo_stesso_nome_prende_il_suffisso() {
     std::fs::create_dir_all(&sub).unwrap();
     let b = immagine(&sub, "foresta.png", 1600, 900, [9, 9, 9]);
 
-    importa(&dest, &sistema, &[a.to_str().unwrap()]);
-    let out = importa(&dest, &sistema, &[b.to_str().unwrap()]);
-    assert_eq!(out.status.code(), Some(0));
+    importa(&dest, &sistema, &[a.to_str().unwrap()]).success();
+    importa(&dest, &sistema, &[b.to_str().unwrap()])
+        .code(0)
+        .stdout(predicate::str::contains("importato: foresta-2"));
 
     assert!(dest.join("foresta").is_dir());
     assert!(dest.join("foresta-2").is_dir());
@@ -2289,8 +2348,9 @@ fn non_maschera_un_wallpaper_di_sistema() {
     pacchetto_finto(&sistema.join("wallpapers"), "Altai");
 
     let src = immagine(tmp.path(), "Altai.png", 1600, 900, [4, 5, 6]);
-    let out = importa(&dest, &sistema, &[src.to_str().unwrap()]);
-    assert_eq!(out.status.code(), Some(0));
+    importa(&dest, &sistema, &[src.to_str().unwrap()])
+        .code(0)
+        .stdout(predicate::str::contains("importato: Altai-2"));
 
     assert!(dest.join("Altai-2").is_dir());
     assert!(!dest.join("Altai").exists(), "il nome di sistema resta libero");
@@ -2308,7 +2368,7 @@ fn la_catena_dei_suffissi_riusa_i_buchi() {
         let sub = tmp.path().join(format!("d{i}"));
         std::fs::create_dir_all(&sub).unwrap();
         let f = immagine(&sub, "mare.png", 1600, 900, *tinta);
-        importa(&dest, &sistema, &[f.to_str().unwrap()]);
+        importa(&dest, &sistema, &[f.to_str().unwrap()]).success();
     }
     assert!(dest.join("mare-3").is_dir());
 
@@ -2316,7 +2376,9 @@ fn la_catena_dei_suffissi_riusa_i_buchi() {
     let sub = tmp.path().join("d9");
     std::fs::create_dir_all(&sub).unwrap();
     let f = immagine(&sub, "mare.png", 1600, 900, [7, 7, 7]);
-    importa(&dest, &sistema, &[f.to_str().unwrap()]);
+    importa(&dest, &sistema, &[f.to_str().unwrap()])
+        .code(0)
+        .stdout(predicate::str::contains("importato: mare-2"));
 
     assert!(dest.join("mare-2").is_dir(), "il buco viene riusato");
     assert_niente_tmp(&dest);
@@ -2336,12 +2398,16 @@ fn file_corrotto_e_illeggibile_falliscono_senza_pacchetti_parziali() {
 
     let assente = tmp.path().join("mai-esistito.png");
 
-    let out = importa(
+    importa(
         &dest,
         &sistema,
         &[corrotto.to_str().unwrap(), assente.to_str().unwrap()],
-    );
-    assert_eq!(out.status.code(), Some(2), "nessun file gestito senza errori");
+    )
+    .code(2)
+    .stdout(predicate::str::contains("0 importati, 2 errori"))
+    .stderr(predicate::str::contains("danneggiata"))
+    .stderr(predicate::str::contains("impossibile leggere il file"));
+
     assert!(!dest.join("rotto").exists());
     assert_niente_tmp(&dest);
 }
@@ -2354,13 +2420,13 @@ fn selezione_mista_restituisce_successo_parziale() {
     std::fs::create_dir_all(&sistema).unwrap();
 
     let buono = immagine(tmp.path(), "buono.png", 1600, 900, [1, 2, 3]);
-    importa(&dest, &sistema, &[buono.to_str().unwrap()]);
+    importa(&dest, &sistema, &[buono.to_str().unwrap()]).success();
 
     let corrotto = tmp.path().join("rotto.png");
     std::fs::write(&corrotto, b"non sono un png").unwrap();
     let altro = immagine(tmp.path(), "altro.png", 1600, 900, [4, 4, 4]);
 
-    let out = importa(
+    importa(
         &dest,
         &sistema,
         &[
@@ -2368,13 +2434,10 @@ fn selezione_mista_restituisce_successo_parziale() {
             buono.to_str().unwrap(),
             corrotto.to_str().unwrap(),
         ],
-    );
-    assert_eq!(out.status.code(), Some(1));
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("1 importati, 1 duplicati, 1 errori"),
-        "stdout: {stdout}"
-    );
+    )
+    .code(1)
+    .stdout(predicate::str::contains("1 importati, 1 duplicati, 1 errori"));
+
     assert_niente_tmp(&dest);
 }
 
@@ -2386,17 +2449,21 @@ fn immagine_piccola_passa_con_force() {
     std::fs::create_dir_all(&sistema).unwrap();
     let piccola = immagine(tmp.path(), "icona.png", 64, 64, [1, 2, 3]);
 
-    let out = importa(&dest, &sistema, &["--force", piccola.to_str().unwrap()]);
-    assert_eq!(out.status.code(), Some(0));
+    importa(&dest, &sistema, &["--force", piccola.to_str().unwrap()])
+        .code(0)
+        .stdout(predicate::str::contains("importato: icona"));
+
     assert!(dest.join("icona").is_dir());
     assert_niente_tmp(&dest);
 }
 
 #[test]
 fn argomenti_mancanti_danno_exit_64() {
-    let mut cmd = assert_cmd::Command::cargo_bin("kde-wallpaper-import").unwrap();
-    let out = cmd.output().unwrap();
-    assert_eq!(out.status.code(), Some(64));
+    assert_cmd::Command::cargo_bin("kde-wallpaper-import")
+        .unwrap()
+        .assert()
+        .code(64)
+        .stderr(predicate::str::contains("FILE"));
 }
 ```
 
@@ -2724,3 +2791,13 @@ Tre scostamenti consapevoli dalla spec, tutti documentati sopra:
    mappa degli hash con una stringa vuota.
 3. Il riepilogo distingue anche gli «annullati», categoria implicita nella
    spec (la conferma negata non è né import né errore) ma non enumerata.
+
+Due emendamenti decisi nella scansione pre-volo, prima di iniziare
+l'esecuzione:
+
+4. I test di integrazione usano davvero i combinatori di `predicates` invece
+   di frugare a mano in `Output`: la dev-dependency era dichiarata ma
+   inutilizzata, e gli assert sull'output diventano più espliciti.
+5. `apply.rs` espone `plasma_args`, funzione pura testabile, così il modulo
+   non resta completamente scoperto. Lo spawn del processo resta non
+   testato: verificarlo cambierebbe lo sfondo della macchina di test.
