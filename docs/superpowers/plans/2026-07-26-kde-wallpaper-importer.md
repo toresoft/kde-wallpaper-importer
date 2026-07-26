@@ -24,17 +24,21 @@
 - `cargo fmt` e `cargo clippy --all-targets -- -D warnings` devono restare puliti a ogni commit.
 - Messaggi utente in italiano; identificatori, commenti di codice e messaggi di commit in italiano, coerenti con la spec.
 - Non aggiungere trailer `Co-Authored-By` ai commit.
+- Prima di qualunque comando `cargo`, eseguire `export PATH="$HOME/.cargo/bin:$PATH"`: la toolchain è installata via rustup e non è nel `PATH` di default.
 
-## Prerequisiti (una tantum, manuale)
+## Prerequisiti
 
-Rust non è installato sulla macchina. Prima della Task 1:
+Rust è già installato via **rustup** (`rustc` 1.96.1, con `clippy` e `rustfmt`),
+ma `~/.cargo/bin` **non è nel `PATH`** di una shell non interattiva. Ogni
+comando `cargo` di questo piano va eseguito dopo:
 
 ```bash
-sudo dnf install -y rust cargo
-rustc --version   # atteso: 1.8x o superiore
+export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-`gcc`, `ld` e `pkg-config` sono già presenti, non serve altro.
+Verifica: `cargo --version` deve stampare `cargo 1.96.1` o superiore.
+
+`gcc`, `ld` e `pkg-config` sono presenti, non serve altro. Niente `dnf`.
 
 ## Struttura dei file
 
@@ -2525,9 +2529,14 @@ Plasma con anteprima ed è disinstallabile dalla GUI.
 
 ## Prerequisiti
 
+Una toolchain Rust stabile (1.80 o superiore):
+
 ```bash
-sudo dnf install -y rust cargo
+sudo dnf install -y rust cargo        # oppure: rustup toolchain install stable
 ```
+
+Se hai installato Rust con rustup, assicurati che `~/.cargo/bin` sia nel
+`PATH` prima di lanciare `make`.
 
 A runtime servono `kdialog`, `notify-send` e `plasma-apply-wallpaperimage`,
 già presenti su una Plasma standard. Il programma degrada senza crash se
