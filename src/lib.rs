@@ -4,4 +4,5 @@ pub mod cli;
 pub mod naming;
 pub mod package;
 pub mod probe;
+pub mod run;
 pub mod ui;

@@ -1,3 +1,3 @@
 fn main() {
-    println!("segnaposto");
+    std::process::exit(kde_wallpaper_importer::run::main());
 }
