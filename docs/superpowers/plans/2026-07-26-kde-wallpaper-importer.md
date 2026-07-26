@@ -966,6 +966,37 @@ mod tests {
     }
 
     #[test]
+    fn write_accetta_unimmagine_con_estensione_sbagliata() {
+        // `probe` rileva il formato dal contenuto e `write` deve usare lo stesso
+        // criterio: un JPEG chiamato .png, o un file senza estensione, passa
+        // `probe` e non deve far abortire l'import in fase di screenshot.
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("bugiardo.png");
+        RgbImage::new(1600, 900)
+            .save_with_format(&src, ImageFormat::Jpeg)
+            .unwrap();
+
+        let i = ImageInfo {
+            width: 1600,
+            height: 900,
+            format: ImageFormat::Jpeg,
+        };
+        let dest_root = dir.path().join("wallpapers");
+        let spec = PackageSpec {
+            source: &src,
+            name: "Bugiardo",
+            info: &i,
+            sha256: "abc",
+        };
+        write(&spec, &dest_root.join("Bugiardo")).expect("formato dedotto dal contenuto");
+
+        assert!(dest_root
+            .join("Bugiardo/contents/images/1600x900.jpg")
+            .is_file());
+        assert!(dest_root.join("Bugiardo/contents/screenshot.png").is_file());
+    }
+
+    #[test]
     fn write_su_nome_esistente_restituisce_name_taken() {
         let dir = tempdir().unwrap();
         let src = immagine(dir.path(), "foto.png", 100, 100);
@@ -1003,19 +1034,45 @@ mod tests {
         let root = dir.path();
         let vecchia = root.join(format!("{TMP_PREFIX}1-0"));
         let recente = root.join(format!("{TMP_PREFIX}2-0"));
-        let estranea = root.join("Foresta");
-        for d in [&vecchia, &recente, &estranea] {
+        let estranea_recente = root.join("Foresta");
+        // Un wallpaper vero dell'utente e' quasi sempre piu' vecchio di 24h:
+        // senza questa dir il filtro sul prefisso non sarebbe mai determinante
+        // e il test resterebbe verde anche rimuovendolo.
+        let estranea_vecchia = root.join("Foresta_Antica");
+        for d in [&vecchia, &recente, &estranea_recente, &estranea_vecchia] {
             std::fs::create_dir_all(d).unwrap();
         }
-        // Retrodata la mtime di `vecchia` di 48 ore.
         let due_giorni_fa = std::time::SystemTime::now() - Duration::from_secs(48 * 3600);
         filetime_set(&vecchia, due_giorni_fa);
+        filetime_set(&estranea_vecchia, due_giorni_fa);
 
         sweep_stale_tmp(root, Duration::from_secs(24 * 3600));
 
-        assert!(!vecchia.exists());
-        assert!(recente.exists());
-        assert!(estranea.exists());
+        assert!(!vecchia.exists(), "tmp dir vecchia: va rimossa");
+        assert!(recente.exists(), "tmp dir recente: va risparmiata");
+        assert!(estranea_recente.exists(), "dir senza prefisso: va risparmiata");
+        assert!(
+            estranea_vecchia.exists(),
+            "dir senza prefisso, anche vecchia: e' un wallpaper dell'utente, non va toccata"
+        );
+    }
+
+    #[test]
+    fn la_tmp_dir_nasce_nella_root_di_destinazione() {
+        // Se la tmp dir finisse altrove (es. /tmp) il rename attraverserebbe
+        // filesystem e non sarebbe piu' atomico. Su una macchina con un solo
+        // filesystem nessun altro test se ne accorgerebbe.
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let tmp = TmpDir::new(root).unwrap();
+        assert_eq!(tmp.path().parent(), Some(root));
+        assert!(tmp
+            .path()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with(TMP_PREFIX));
     }
 
     /// Imposta la mtime di una directory senza dipendenze aggiuntive.
@@ -1313,7 +1370,12 @@ pub fn write(spec: &PackageSpec, dest_dir: &Path) -> Result<(), WriteError> {
 }
 
 fn scrivi_screenshot(source: &Path, dest: &Path) -> anyhow::Result<()> {
-    let img = image::open(source)?;
+    // `image::open` deduce il formato dalla sola estensione del path: userebbe
+    // un criterio opposto a quello di `probe`, e farebbe abortire l'import di
+    // un JPEG chiamato .png o di un file senza estensione.
+    let img = image::ImageReader::open(source)?
+        .with_guessed_format()?
+        .decode()?;
     let out = if img.width() > SCREENSHOT_MAX || img.height() > SCREENSHOT_MAX {
         img.resize(
             SCREENSHOT_MAX,
@@ -1333,7 +1395,7 @@ Aggiungere `pub mod package;` a `src/lib.rs`.
 - [ ] **Step 7: Verificare che i test passino**
 
 Run: `cargo test package`
-Expected: PASS, 8 test.
+Expected: PASS, 10 test.
 
 - [ ] **Step 8: Commit**
 
