@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  rpm:
+    name: Build RPM (Fedora)
+    runs-on: ubuntu-latest
+    container: fedora:44
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          dnf install -y rust cargo gcc make rpm-build
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Inject version into spec
+        run: |
+          sed -i "s/^Version: .*/Version:        ${{ steps.version.outputs.version }}/" \
+            packaging/rpm/kde-wallpaper-importer.spec
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Set up RPM build tree
+        run: |
+          mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+
+      - name: Create source tarball
+        run: |
+          VERSION=${{ steps.version.outputs.version }}
+          tarball=~/rpmbuild/SOURCES/kde-wallpaper-importer-${VERSION}.tar.gz
+          mkdir -p /tmp/stage/kde-wallpaper-importer-${VERSION}
+          tar -czf "$tarball" \
+            --transform "s|^|kde-wallpaper-importer-${VERSION}/|" \
+            Cargo.toml Cargo.lock src/ share/
+
+      - name: Copy spec
+        run: |
+          cp packaging/rpm/kde-wallpaper-importer.spec ~/rpmbuild/SPECS/
+
+      - name: Build RPM
+        run: |
+          rpmbuild -bb ~/rpmbuild/SPECS/kde-wallpaper-importer.spec
+
+      - name: Upload RPM to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            /root/rpmbuild/RPMS/*/*.rpm
+          fail_on_unmatched_files: true
+
+  deb:
+    name: Build DEB (Ubuntu)
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            rustc cargo gcc make dpkg-dev debhelper
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Stage debian/ for build
+        run: |
+          # dpkg-buildpackage expects debian/ at the source root
+          cp -r packaging/debian ./debian
+          # Regenerate changelog with the exact version
+          VERSION=${{ steps.version.outputs.version }}
+          cat > debian/changelog << EOF
+          kde-wallpaper-importer (${VERSION}-1) unstable; urgency=medium
+
+            * Release ${VERSION}.
+
+           -- CI <ci@example.com>  $(date -R)
+          EOF
+
+      - name: Build DEB
+        run: |
+          dpkg-buildpackage -us -uc -b
+
+      - name: Collect DEB
+        run: |
+          mkdir -p artifacts
+          cp ../*.deb artifacts/
+
+      - name: Upload DEB to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.deb
+          fail_on_unmatched_files: true
