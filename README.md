@@ -1,95 +1,96 @@
 # KDE Wallpaper Importer
 
-Aggiunge al menù contestuale di Dolphin due voci per importare un'immagine
-nella libreria wallpaper di KDE:
+Adds two entries to the Dolphin context menu for importing an image into the
+KDE wallpaper library:
 
-- **Importa come sfondo** — installa il pacchetto e basta
-- **Importa e imposta come sfondo** — installa e applica subito
+- **Import as wallpaper** — installs the package only
+- **Import and set as wallpaper** — installs and applies immediately
 
-L'immagine diventa un pacchetto KPackage in
-`~/.local/share/wallpapers/<Nome>/`, quindi compare nel selettore sfondi di
-Plasma con anteprima ed è disinstallabile dalla GUI.
+The image becomes a KPackage in
+`~/.local/share/wallpapers/<Name>/`, so it appears in the Plasma wallpaper
+selector with a preview and can be uninstalled from the GUI.
 
-## Prerequisiti
+## Prerequisites
 
-Una toolchain Rust stabile (1.80 o superiore):
-
-```bash
-sudo dnf install -y rust cargo        # oppure: rustup toolchain install stable
-```
-
-Se hai installato Rust con rustup, assicurati che `~/.cargo/bin` sia nel
-`PATH` prima di lanciare `make`.
-
-A runtime servono `kdialog`, `notify-send` e `plasma-apply-wallpaperimage`,
-già presenti su una Plasma standard. Il programma degrada senza crash se
-mancano.
-
-## Installazione
+A stable Rust toolchain (1.80 or newer):
 
 ```bash
-make install              # in ~/.local
-make install PREFIX=/usr/local   # per tutti gli utenti (richiede sudo)
+sudo dnf install -y rust cargo        # or: rustup toolchain install stable
 ```
 
-Se la voce non compare, chiudere e riaprire Dolphin.
+If you installed Rust via rustup, make sure `~/.cargo/bin` is in your `PATH`
+before running `make`.
 
-## Disinstallazione
+At runtime, `kdialog`, `notify-send`, and `plasma-apply-wallpaperimage` are
+required, all already present on a standard Plasma installation. The program
+degrades gracefully without crashing if any are missing.
+
+## Installation
+
+```bash
+make install              # to ~/.local
+make install PREFIX=/usr/local   # system-wide for all users (requires sudo)
+```
+
+If the entries don't appear, close and reopen Dolphin.
+
+## Uninstallation
 
 ```bash
 make uninstall
 ```
 
-I wallpaper già importati non vengono toccati: si rimuovono dal selettore di
-Plasma o cancellando la directory sotto `~/.local/share/wallpapers/`.
+Already imported wallpapers are not touched: remove them from the Plasma
+selector or by deleting the directory under `~/.local/share/wallpapers/`.
 
-## Uso da riga di comando
+## Command-line usage
 
 ```
-kde-wallpaper-import [OPZIONI] <FILE>...
-  --apply              imposta come sfondo l'ultimo pacchetto importato
-  --fill-mode <MODE>   passato a plasma-apply-wallpaperimage
-  --dest <DIR>         root di destinazione
-  --no-ui              nessun dialogo né notifica
-  --force              salta le conferme sulle immagini piccole
-  --min-size <WxH>     soglia di avviso (default 1024x768)
+kde-wallpaper-import [OPTIONS] <FILE>...
+  --apply              set the last imported package as wallpaper
+  --fill-mode <MODE>   passed to plasma-apply-wallpaperimage
+  --dest <DIR>         destination root
+  --no-ui              no dialogs or notifications
+  --force              skip confirmations for small images
+  --min-size <WxH>     warning threshold (default 1024x768)
 ```
 
-Exit code: `0` nessun errore, `1` successo parziale, `2` nessun file gestito
-senza errori, `64` errore d'uso.
+Exit codes: `0` no errors, `1` partial success, `2` no files handled without
+errors, `64` usage error.
 
-## Come evita le collisioni
+## How it avoids collisions
 
-Il nome del pacchetto deriva dal nome del file (spazi → `_`, massimo 60
-caratteri). Prima di scrivere:
+The package name is derived from the filename (spaces → `_`, max 60
+characters). Before writing:
 
-1. se un pacchetto già importato ha lo **stesso contenuto** (SHA-256), il file
-   viene saltato come duplicato;
-2. altrimenti si cerca il primo nome libero — `foresta`, `foresta-2`, … —
-   confrontando **case-insensitive** contro tutte le directory `wallpapers` di
-   `$XDG_DATA_HOME` e `$XDG_DATA_DIRS`, incluse quelle di sistema.
+1. if an already imported package has the **same content** (SHA-256), the file
+   is skipped as a duplicate;
+2. otherwise the first free name is found — `forest`, `forest-2`, … — comparing
+   **case-insensitive** against all `wallpapers` directories in
+   `$XDG_DATA_HOME` and `$XDG_DATA_DIRS`, including system ones.
 
-Il punto 2 include `/usr/share/wallpapers` perché un pacchetto utente con lo
-stesso Id di uno di sistema lo maschererebbe, facendo sparire l'originale dal
-selettore.
+Step 2 includes `/usr/share/wallpapers` because a user package with the same
+Id as a system one would shadow it, making the original disappear from the
+selector.
 
-La scrittura è atomica: il pacchetto viene costruito in una directory
-temporanea e spostato con `renameat2(RENAME_NOREPLACE)`. Non esistono
-pacchetti a metà, nemmeno interrompendo il programma.
+Writing is atomic: the package is built in a temporary directory and moved with
+`renameat2(RENAME_NOREPLACE)`. There are no half-written packages, even if the
+program is interrupted.
 
-## Formati supportati
+## Supported formats
 
-JPEG, PNG, WebP, TIFF, BMP. AVIF e JXL sono esclusi: né Pillow né ImageMagick
-li decodificano nell'installazione Fedora di riferimento, e il crate `image`
-richiederebbe `libdav1d`.
+JPEG, PNG, WebP, TIFF, BMP. AVIF and JXL are excluded: neither Pillow nor
+ImageMagick decodes them on the reference Fedora installation, and the `image`
+crate would require `libdav1d`.
 
-## Nota
+## Note
 
-Se in `~/.local/share/kio/servicemenus/` è presente
-`setAsWallpaperFive.desktop`, quella voce imposta lo sfondo via `gsettings`
-(GNOME) e su Plasma non ha effetto. Questo progetto non la modifica.
+If `setAsWallpaperFive.desktop` is present in
+`~/.local/share/kio/servicemenus/`, that entry sets the wallpaper via
+`gsettings` (GNOME) and has no effect on Plasma. This project does not modify
+it.
 
-## Sviluppo
+## Development
 
 ```bash
 cargo test
