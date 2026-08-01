@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release
+
+override_dh_auto_install:
+	install -Dm755 target/release/kde-wallpaper-import \
+	    debian/kde-wallpaper-importer/usr/bin/kde-wallpaper-import
+	install -d debian/kde-wallpaper-importer/usr/share/kio/servicemenus
+	sed 's|@BINARY@|/usr/bin/kde-wallpaper-import|g' \
+	    share/kio/servicemenus/kde-wallpaper-importer.desktop.in \
+	    > debian/kde-wallpaper-importer/usr/share/kio/servicemenus/kde-wallpaper-importer.desktop
+
+override_dh_auto_test:
+	# skip; CI runs cargo test separately in ci.yml

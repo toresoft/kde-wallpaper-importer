@@ -1,0 +1,15 @@
+Source: kde-wallpaper-importer
+Section: utils
+Priority: optional
+Maintainer: CI <ci@example.com>
+Build-Depends: debhelper (>= 13), rustc, cargo, gcc, make
+Standards-Version: 4.7.0
+
+Package: kde-wallpaper-importer
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, kdialog, libnotify-bin, plasma-workspace
+Description: Import wallpapers into KDE Plasma from Dolphin
+ kde-wallpaper-importer adds Dolphin context-menu entries to import image
+ files as KDE Plasma wallpaper packages. It deduplicates by SHA-256 and
+ resolves name collisions. Imported wallpapers can optionally be set as the
+ active wallpaper via plasma-apply-wallpaperimage.
