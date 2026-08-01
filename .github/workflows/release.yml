@@ -59,11 +59,19 @@ jobs:
         run: |
           rpmbuild -bb ~/rpmbuild/SPECS/kde-wallpaper-importer.spec
 
+      - name: Collect RPM
+        # $HOME differs across runners (e.g. /github/home on GitHub Actions,
+        # /root under a local root container). Copy to a relative path so the
+        # upload step does not depend on HOME.
+        run: |
+          mkdir -p artifacts
+          cp "$HOME"/rpmbuild/RPMS/*/*.rpm artifacts/
+
       - name: Upload RPM to release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            /root/rpmbuild/RPMS/*/*.rpm
+            artifacts/*.rpm
           fail_on_unmatched_files: true
 
   deb:
