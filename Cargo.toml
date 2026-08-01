@@ -3,7 +3,7 @@ name = "kde-wallpaper-importer"
 version = "0.1.0"
 edition = "2021"
 description = "Importa immagini come pacchetti wallpaper KDE dal menù contestuale di Dolphin"
-license = "MIT"
+license = "GPL-3.0-or-later"
 
 [lib]
 name = "kde_wallpaper_importer"
